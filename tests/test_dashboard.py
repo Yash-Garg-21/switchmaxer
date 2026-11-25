@@ -52,6 +52,27 @@ class DashboardTest(unittest.TestCase):
     def post(self, client, path, **data):
         return client.post(path, data={"csrf": self.token(client), **data})
 
+    def test_browser_upload_returns_to_profile_and_blocks_cross_site_posts(self):
+        app = create_app(self.data)
+        with TestClient(app) as client:
+            profile = client.get("/profile")
+            self.assertEqual(profile.headers["Referrer-Policy"], "same-origin")
+            data = {"csrf": self.token(client, "/profile")}
+            files = {"resumes": ("General.pdf", sample_pdf(), "application/pdf")}
+            external = client.post("/profile/resumes", data=data, files=files, headers={
+                "Origin": "null", "Sec-Fetch-Site": "cross-site",
+            })
+            self.assertEqual(external.status_code, 403)
+            self.assertEqual(app.state.store.resumes(), [])
+            native = client.post("/profile/resumes", data=data, files=files, headers={
+                "Origin": "http://testserver", "Sec-Fetch-Site": "same-origin",
+            })
+            self.assertEqual(native.url.path, "/profile")
+            self.assertIn("Added 1 resume.", native.text)
+            direct = client.get("/profile/resumes", follow_redirects=False)
+            self.assertEqual(direct.status_code, 303)
+            self.assertEqual(direct.headers["Location"], "/profile")
+
     def test_batch_receipts_persist_after_restart_and_reports_update(self):
         app = create_app(self.data)
         with TestClient(app) as client:

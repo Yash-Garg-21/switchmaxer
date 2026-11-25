@@ -207,7 +207,8 @@ def create_app(data_dir=None):
         if not request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "no-referrer"
+        # A no-referrer policy also clears Origin on native HTML form POSTs.
+        response.headers["Referrer-Policy"] = "same-origin"
         response.headers["X-Frame-Options"] = "DENY"
         return response
 
@@ -280,6 +281,10 @@ def create_app(data_dir=None):
             "\n".join(resume["text"] for resume in resumes), profile["verified_skills"], unconfirmed_only=True,
         )
         return render(request, "profile", profile=profile, resumes=resumes, default=default, suggestions=suggestions)
+
+    @app.get("/profile/resumes")
+    def resume_upload_page():
+        return redirect("/profile")
 
     @app.post("/profile/resumes")
     async def upload_resumes(request: Request):
