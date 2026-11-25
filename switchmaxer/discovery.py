@@ -22,7 +22,7 @@ import re
 import socket
 import ssl
 from time import monotonic, sleep
-from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import SplitResult, parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 from zlib import error as ZlibError
 
 
@@ -54,7 +54,12 @@ BOARDS = {
     "naukri": ("naukri.com",),
     "instahyre": ("instahyre.com",),
 }
-ATS = {"greenhouse", "lever", "ashby"}
+ATS = {"greenhouse", "lever", "ashby", "smartrecruiters"}
+_SMARTRECRUITERS_HOST = "api.smartrecruiters.com"
+_SMARTRECRUITERS_BOARD_HOSTS = {"careers.smartrecruiters.com", "jobs.smartrecruiters.com"}
+_SMARTRECRUITERS_PAGE_SIZE = 100
+_SMARTRECRUITERS_PAGE_LIMIT = 2
+_SMARTRECRUITERS_DETAIL_LIMIT = 7
 TRACKING = {"ref", "trk", "trackingid", "refid", "source", "gh_src", "lever-source", "li_fat_id"}
 AGENT = "SwitchMaxer"
 URL_PATTERN = re.compile(r"""https?://[^\s<>"\x00-\x1f]+""", re.I)
@@ -204,6 +209,9 @@ class _FetchError(Exception):
         self.status = status
 
 
+_FEED_ERRORS = (_FetchError, OSError, EOFError, ZlibError, ValueError, http.client.HTTPException)
+
+
 def _public_socket(host: str, port: int, timeout: float) -> socket.socket:
     """Pin each outbound connection to a resolved public address."""
     endpoints = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
@@ -272,6 +280,8 @@ def _get(url: str, *, allowed=None, redirect_delay: float = 0, max_mib: int = 12
 def _feed_endpoint(kind: str, source: dict) -> str:
     url = urlsplit(str(source.get("url") or ""))
     pieces = [part for part in url.path.split("/") if part]
+    if kind == "smartrecruiters":
+        return _smartrecruiters_endpoint(source, url, pieces)
     prefix = {"greenhouse": ["v1", "boards"], "lever": ["v0", "postings"],
               "ashby": ["posting-api", "job-board"]}[kind]
     domains = {"greenhouse": "greenhouse.io", "lever": "lever.co", "ashby": "ashbyhq.com"}
@@ -288,6 +298,25 @@ def _feed_endpoint(kind: str, source: dict) -> str:
         return f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
     host = "api.eu.lever.co" if (url.hostname or "").endswith(".eu.lever.co") else "api.lever.co"
     return f"https://{host}/v0/postings/{slug}?mode=json"
+
+
+def _smartrecruiters_endpoint(source: dict, url: SplitResult, pieces: list[str]) -> str:
+    hosted_slug = ""
+    if pieces and url.hostname in _SMARTRECRUITERS_BOARD_HOSTS:
+        hosted_slug = pieces[0]
+    elif (url.hostname == _SMARTRECRUITERS_HOST and len(pieces) in {4, 5}
+          and pieces[:2] == ["v1", "companies"] and pieces[3] == "postings"):
+        hosted_slug = pieces[2]
+    slug = _short(source.get("slug") or hosted_slug)
+    if not re.fullmatch(r"[a-zA-Z0-9_.-]+", slug) or slug in {".", ".."}:
+        raise ValueError("Supply a SmartRecruiters board slug or a hosted board URL.")
+    query = dict(parse_qsl(url.query))
+    country = _short(query.get("country")).lower()
+    if country and not re.fullmatch(r"[a-z]{2}", country):
+        raise ValueError("Use a two-letter country code for SmartRecruiters, for example country=in.")
+    filters = [(key, value) for key, value in (("country", country), ("q", _short(query.get("q")))) if value]
+    filters.append(("destination", "PUBLIC"))
+    return urlunsplit(("https", _SMARTRECRUITERS_HOST, f"/v1/companies/{slug}/postings", urlencode(filters), ""))
 
 
 _UNSPECIFIED_LOCATION = re.compile(
@@ -400,6 +429,124 @@ def _feed(source: dict, kind: str) -> list[JobRecord]:
     return [job for job in jobs if job is not None]
 
 
+def _smartrecruiters_open(item: dict) -> bool:
+    deadline = _date(item.get("unpublishOn"))
+    return (item.get("active") is not False
+            and _short(item.get("visibility")).upper() != "INTERNAL"
+            and (not deadline or deadline >= datetime.now(timezone.utc).date().isoformat()))
+
+
+def _smartrecruiters_record(slug: str, company: str, item: dict) -> JobRecord:
+    key = _short(item["id"])
+    place = item.get("location")
+    place = place if isinstance(place, dict) else {}
+    location = _short(place.get("fullLocation")) or ", ".join(
+        filter(None, (_short(place.get(field)) for field in ("city", "region", "country"))),
+    )
+    location = ", ".join(part.strip() for part in location.split(",") if part.strip())
+    title = _short(item["name"])
+    if place.get("remote") is True:
+        mode = "remote"
+    elif place.get("hybrid") is True:
+        mode = "hybrid"
+    else:
+        mode = _work_mode(f"{title} {location}")
+    ad = item.get("jobAd")
+    sections = ad.get("sections") if isinstance(ad, dict) else None
+    sections = sections if isinstance(sections, dict) else {}
+    descriptions = []
+    for field, label in (("jobDescription", "Job description"), ("qualifications", "Qualifications"),
+                         ("additionalInformation", "Additional information")):
+        section = sections.get(field)
+        if isinstance(section, dict) and (body := _plain(section.get("text"))):
+            descriptions.append(f"{_short(section.get('title')) or label}\n{body}")
+    url = canonical_url(item.get("postingUrl")) or f"https://jobs.smartrecruiters.com/{slug}/{key}"
+    return JobRecord(
+        "smartrecruiters", f"{slug}/{key}", company, title, location, url, _apply_url(item.get("applyUrl")) or url,
+        "\n\n".join(descriptions), _date(item.get("releasedDate")), _short(item.get("refNumber")), mode,
+    )
+
+
+def _smartrecruiters_feed(source: dict) -> SourceResult:
+    endpoint = urlsplit(_feed_endpoint("smartrecruiters", source))
+    slug = endpoint.path.split("/")[3]
+    filters = parse_qsl(endpoint.query)
+    company = str(source["name"])
+
+    def fetch(path: str, query: list[tuple[str, str]] | None = None) -> dict:
+        request = endpoint._replace(path=path, query=urlencode(query or ()))
+
+        def allowed(candidate: str) -> bool:
+            return urlsplit(candidate) == request
+
+        payload, _ = _get(request.geturl(), allowed=allowed, max_mib=4)
+        response = json.loads(payload)
+        if not isinstance(response, dict):
+            raise ValueError("The SmartRecruiters feed did not return an object.")
+        return response
+
+    listings = {}
+    notes: list[str] = []
+    offset = 0
+    more = True
+    details_blocked = False
+    for _ in range(_SMARTRECRUITERS_PAGE_LIMIT):
+        try:
+            page = fetch(endpoint.path, filters + [("limit", str(_SMARTRECRUITERS_PAGE_SIZE)), ("offset", str(offset))])
+            rows = page.get("content")
+            if not isinstance(rows, list):
+                raise ValueError("The SmartRecruiters feed did not return a postings list.")
+        except _FEED_ERRORS as error:
+            if not offset:
+                raise
+            notes.append(f"Additional SmartRecruiters postings could not be loaded. {error}")
+            details_blocked = isinstance(error, _FetchError) and error.status in {401, 403, 429}
+            break
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            key = _short(item.get("id"))
+            if re.fullmatch(r"[a-zA-Z0-9-]+", key) and _short(item.get("name")) and _smartrecruiters_open(item):
+                listings.setdefault(key, item)
+        offset += len(rows)
+        total = page.get("totalFound")
+        more = bool(rows) and (offset < total if isinstance(total, int) else len(rows) >= _SMARTRECRUITERS_PAGE_SIZE)
+        if not more:
+            break
+    else:
+        if more:
+            notes.append(f"SmartRecruiters listing limit reached after {offset} postings.")
+
+    failed_details = 0
+    records = []
+    for index, (key, item) in enumerate(listings.items()):
+        if index < _SMARTRECRUITERS_DETAIL_LIMIT and not details_blocked:
+            try:
+                detail = fetch(f"{endpoint.path}/{key}")
+                if _short(detail.get("id")) != key:
+                    raise ValueError("The SmartRecruiters detail did not match the posting ID.")
+                if not _smartrecruiters_open(detail):
+                    continue
+                item = item | {name: value for name, value in detail.items() if value is not None}
+            except _FEED_ERRORS as error:
+                status = error.status if isinstance(error, _FetchError) else None
+                if status in {404, 410}:
+                    continue
+                failed_details += 1
+                details_blocked = status in {401, 403, 429}
+                if details_blocked:
+                    notes.append(f"SmartRecruiters stopped serving posting details. {error}")
+        records.append(_smartrecruiters_record(slug, company, item))
+
+    if len(listings) > _SMARTRECRUITERS_DETAIL_LIMIT:
+        notes.append(f"Up to {_SMARTRECRUITERS_DETAIL_LIMIT} posting descriptions are fetched per refresh.")
+    if failed_details:
+        notes.append(f"Details could not be loaded for {failed_details} SmartRecruiters postings.")
+    if without_description := sum(not job.description for job in records):
+        notes.append(f"{without_description} postings have a link and basic details only.")
+    return SourceResult(source, records, "success", " ".join(notes))
+
+
 def refresh_sources(sources: list[dict]) -> list[SourceResult]:
     """Refresh registry entries concurrently and keep each entry's outcome."""
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -409,14 +556,14 @@ def refresh_sources(sources: list[dict]) -> list[SourceResult]:
 def _refresh_one(source: dict) -> SourceResult:
     kind = str(source.get("kind") or "").strip().lower()
     try:
+        if kind == "smartrecruiters":
+            return _smartrecruiters_feed(source)
         if kind in ATS:
             return SourceResult(source, _feed(source, kind), "success")
         if kind == "html":
             return _crawl(source)
         return SourceResult(source, [], "manual", "Import links or alerts for this source.")
-    except (
-        _FetchError, OSError, EOFError, ZlibError, ValueError, AttributeError, KeyError, TypeError, http.client.HTTPException,
-    ) as error:
+    except _FEED_ERRORS + (AttributeError, KeyError, TypeError) as error:
         return SourceResult(source, [], "failed", str(error))
 
 

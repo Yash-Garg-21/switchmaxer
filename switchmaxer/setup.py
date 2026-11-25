@@ -18,12 +18,11 @@ from urllib.parse import urlsplit
 
 from .discovery import _feed_endpoint, canonical_url
 from .resumes import ResumeError, read_pdf, validate_source
-from .storage import PROFILE_DEFAULTS, Store, default_data_dir, json_text, validate_profile
+from .storage import PROFILE_DEFAULTS, SOURCE_KINDS, Store, default_data_dir, json_text, validate_profile
 
 
 _PDF_LIMIT = 15 * 1024 * 1024
 _JSON_LIMIT = 1024 * 1024
-_SOURCE_KINDS = {"greenhouse", "lever", "ashby", "html"}
 _NUMBER_FIELDS = {"notice_days", "experience_years", "fixed_ctc", "variable_ctc", "expected_ctc"}
 
 
@@ -137,7 +136,7 @@ def _source(value, position):
     name = _text(value.get("name"), f"{label} name", 120, required=True)
     url = _text(value.get("url"), f"{label} URL", 2000, required=True)
     kind = _text(value.get("kind"), f"{label} kind", 40, required=True).casefold()
-    if not canonical_url(url) or kind not in _SOURCE_KINDS:
+    if not canonical_url(url) or kind not in SOURCE_KINDS:
         raise SetupError(f"{label} needs a valid careers URL and a supported source kind.")
     result = {"name": name, "url": url, "kind": kind}
     if "slug" in value:

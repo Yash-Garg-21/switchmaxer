@@ -139,6 +139,17 @@ class DashboardTest(unittest.TestCase):
             self.assertIn("Applied elsewhere", client.get("/applications").text)
             self.assertIn("checked", client.get("/exports/jobs.html").text)
 
+    def test_sources_saves_smartrecruiters_board_with_country_filter(self):
+        app = create_app(self.data)
+        with TestClient(app) as client:
+            url = "https://careers.smartrecruiters.com/example?country=in"
+            response = self.post(client, "/sources/save", name="Example", kind="smartrecruiters", url=url)
+            self.assertIn("Company source saved.", response.text)
+            self.assertIn("SmartRecruiters", response.text)
+            self.assertIn("1 source · Public feeds", response.text)
+            source, = app.state.store.sources()
+            self.assertEqual((source["kind"], source["url"]), ("smartrecruiters", url))
+
     def test_old_tailoring_proposal_needs_preparation_again(self):
         app = create_app(self.data)
         with TestClient(app) as client:

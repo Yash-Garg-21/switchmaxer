@@ -1,6 +1,7 @@
 import json
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 from switchmaxer import discovery
 
@@ -67,6 +68,125 @@ Content-Type: text/html; charset=utf-8
         self.assertEqual(greenhouse.records[0].description, "2 years of experience")
         self.assertEqual(ashby.records[0].published_date, "2025-02-10")
         self.assertEqual(ashby.records[0].work_mode, "hybrid")
+
+    def test_smartrecruiters_public_list_and_detail_keep_official_links(self):
+        source = {
+            "kind": "smartrecruiters", "name": "Arista Networks",
+            "url": "https://careers.smartrecruiters.com/AristaNetworks?q=Kernel+Engineer&country=IN&destination=INTERNAL",
+        }
+        listing = {
+            "id": "123", "name": "Software Engineer II", "releasedDate": "2026-11-12T09:00:00Z",
+            "location": {"fullLocation": "Bangalore, , India", "hybrid": True},
+            "ref": "https://example.net/untrusted-detail-url",
+        }
+        url = "https://jobs.smartrecruiters.com/AristaNetworks/123-software-engineer"
+        detail = {
+            "id": "123", "postingUrl": url, "applyUrl": f"{url}?oga=true",
+            "refNumber": "REF123", "active": True,
+            "jobAd": {"sections": {
+                "jobDescription": {"title": "Role", "text": "<p>Develop kernel tooling.</p>"},
+                "qualifications": {"text": "<ul><li>2 years of experience in C++.</li></ul>"},
+            }},
+        }
+        requests = []
+
+        def fetch(endpoint, *, allowed, **kwargs):
+            path = urlsplit(endpoint).path
+            self.assertTrue(allowed(endpoint))
+            self.assertFalse(allowed(endpoint.replace("api.smartrecruiters.com", "example.net")))
+            self.assertFalse(allowed(endpoint.replace("https:", "http:")))
+            self.assertFalse(allowed("https://api.smartrecruiters.com/v1/companies/Other/postings"))
+            if "destination=PUBLIC" in endpoint:
+                self.assertFalse(allowed(endpoint.replace("destination=PUBLIC", "destination=INTERNAL")))
+            requests.append((path, parse_qs(urlsplit(endpoint).query)))
+            response = detail if path.endswith("/123") else {"content": [listing], "totalFound": 1}
+            return json.dumps(response).encode(), endpoint
+
+        with patch.object(discovery, "_get", side_effect=fetch):
+            result, = discovery.refresh_sources([source])
+        path = "/v1/companies/AristaNetworks/postings"
+        self.assertEqual(requests, [
+            (path, {"country": ["in"], "q": ["Kernel Engineer"], "destination": ["PUBLIC"],
+                    "limit": ["100"], "offset": ["0"]}),
+            (f"{path}/123", {}),
+        ])
+        self.assertEqual((result.status, result.error), ("success", ""))
+        job, = result.records
+        self.assertEqual(job, discovery.JobRecord(
+            "smartrecruiters", "AristaNetworks/123", "Arista Networks", "Software Engineer II",
+            "Bangalore, India", url, f"{url}?oga=true",
+            "Role\nDevelop kernel tooling.\n\nQualifications\n2 years of experience in C++.",
+            "2026-11-12", "REF123", "hybrid",
+        ))
+
+        api_source = source | {"url": f"https://api.smartrecruiters.com{path}?offset=10&q=Kernel+Engineer&country=in"}
+        self.assertEqual(
+            discovery._feed_endpoint("smartrecruiters", api_source),
+            discovery._feed_endpoint("smartrecruiters", source),
+        )
+        with self.assertRaises(ValueError):
+            discovery._feed_endpoint("smartrecruiters", {"url": "https://jobs.smartrecruiters.com.example.net/Fake"})
+
+    def test_smartrecruiters_bounds_list_pages_and_preserves_link_only_results(self):
+        source = {"kind": "smartrecruiters", "name": "Eurofins", "url": "https://jobs.smartrecruiters.com/Eurofins"}
+        requests = []
+
+        def fetch(endpoint, **kwargs):
+            requests.append(endpoint)
+            params = parse_qs(urlsplit(endpoint).query)
+            if params:
+                start = int(params["offset"][0])
+                response = {
+                    "content": [{"id": str(index), "name": f"Engineer {index}"} for index in range(start, start + 2)],
+                    "totalFound": 6,
+                }
+            else:
+                response = {"id": "0", "jobAd": {"sections": {"jobDescription": {"text": "Public description."}}}}
+            return json.dumps(response).encode(), endpoint
+
+        with (patch.object(discovery, "_get", side_effect=fetch),
+              patch.object(discovery, "_SMARTRECRUITERS_PAGE_SIZE", 2),
+              patch.object(discovery, "_SMARTRECRUITERS_DETAIL_LIMIT", 1)):
+            result, = discovery.refresh_sources([source])
+        self.assertEqual(len(requests), 3)
+        self.assertTrue(requests[1].endswith("limit=2&offset=2"))
+        self.assertEqual(result.status, "success")
+        self.assertIn("listing limit reached after 4 postings", result.error)
+        self.assertIn("Up to 1 posting descriptions", result.error)
+        self.assertIn("3 postings have a link and basic details only", result.error)
+        self.assertEqual([job.title for job in result.records], [f"Engineer {index}" for index in range(4)])
+        self.assertEqual(result.records[0].description, "Job description\nPublic description.")
+        self.assertEqual(result.records[-1].apply_url, "https://jobs.smartrecruiters.com/Eurofins/3")
+        self.assertEqual(result.records[-1].description, "")
+
+    def test_smartrecruiters_skips_closed_details_and_retains_links_on_rate_limit(self):
+        source = {"kind": "smartrecruiters", "name": "Brady", "slug": "BradyCorporation3"}
+        requests = []
+
+        def fetch(endpoint, **kwargs):
+            key = urlsplit(endpoint).path.rsplit("/", 1)[-1]
+            requests.append(key)
+            if key == "postings":
+                response = {"content": [{"id": str(index), "name": "Engineer"} for index in range(1, 6)]}
+            elif key == "1":
+                raise discovery._FetchError("HTTP 404", 404)
+            elif key == "2":
+                response = {"id": "2", "active": False}
+            elif key == "3":
+                raise discovery._FetchError("HTTP 429", 429)
+            else:
+                self.fail("SmartRecruiters details should stop after an HTTP 429.")
+            return json.dumps(response).encode(), endpoint
+
+        with patch.object(discovery, "_get", side_effect=fetch):
+            result, = discovery.refresh_sources([source])
+        self.assertEqual(requests, ["postings", "1", "2", "3"])
+        self.assertEqual(result.status, "success")
+        self.assertEqual([job.source_id for job in result.records], [
+            "BradyCorporation3/3", "BradyCorporation3/4", "BradyCorporation3/5",
+        ])
+        self.assertTrue(all(not job.description for job in result.records))
+        self.assertIn("HTTP 429", result.error)
 
     def test_greenhouse_recovers_geography_from_a_labeled_description_or_office(self):
         item = {

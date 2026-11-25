@@ -9,7 +9,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from .discovery import canonical_url
+from .discovery import ATS, canonical_url
 from .resumes import TAILORING_REVISION
 
 
@@ -131,7 +131,8 @@ CREATE TABLE IF NOT EXISTS applications (
 );
 """
 
-EMPLOYER_SOURCES = {"greenhouse", "lever", "ashby", "html", "company"}
+SOURCE_KINDS = ATS | {"html"}
+EMPLOYER_SOURCES = SOURCE_KINDS | {"company"}
 
 
 def utc_now():

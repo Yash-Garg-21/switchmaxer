@@ -7,7 +7,7 @@
     {{ input('url', 'Careers or job board URL', source.url, 'url', 'https://job-boards.greenhouse.io/acme', true) }}
     <label class="field"><span>Source type</span>
       <select name="kind">
-        {% for kind, label in [('greenhouse','Greenhouse'),('lever','Lever'),('ashby','Ashby'),('html','Company site')] %}
+        {% for kind, label in company_source_types %}
           <option value="{{ kind }}" {% if source.kind == kind %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
@@ -26,7 +26,10 @@
     </form>
   </header>
   <section class="panel section-panel">
-    <header class="section-head"><h2>Company registry</h2><p>Supported feeds are Greenhouse, Lever, and Ashby. Company-site discovery uses permitted careers pages.</p></header>
+    <header class="section-head">
+      <h2>Company registry</h2>
+      <p>{{ sources|length }} {{ 'source' if sources|length == 1 else 'sources' }} · Public feeds and permitted company careers pages</p>
+    </header>
     {% for source in sources %}
       <details class="registry-row">
         <summary><strong>{{ source.name }}</strong><span class="tag">{{ source_label(source.kind) }}</span>

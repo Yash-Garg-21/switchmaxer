@@ -23,7 +23,8 @@ from .applications import ApprovedApplication, TEST_JOBS, TestPortal, create_tes
 from .discovery import canonical_url, experience_range, matches_profile, parse_import, refresh_sources
 from .resumes import ResumeError, prepare_resume, read_pdf, suggest_skills, validate_source
 from .storage import (
-    PROFILE_DEFAULTS, Store, default_data_dir, job_version, json_text, resume_configuration, validate_profile,
+    PROFILE_DEFAULTS, SOURCE_KINDS, Store, default_data_dir, job_version, json_text, resume_configuration,
+    validate_profile,
 )
 
 
@@ -33,7 +34,8 @@ ALERT_LIMIT = 2 * 1024 * 1024
 JOBS_PER_PAGE = 60
 DESCRIPTION_PREVIEW = 3200
 SOURCES = {
-    "greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby", "html": "Company site",
+    "greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby", "smartrecruiters": "SmartRecruiters",
+    "html": "Company site",
     "linkedin": "LinkedIn", "naukri": "Naukri", "instahyre": "Instahyre", "manual": "Manual import",
     "test_portal": "Test portal",
 }
@@ -132,6 +134,7 @@ def create_app(data_dir=None):
     templates.env.globals.update(
         csrf_token=csrf_token, source_label=lambda value: SOURCES.get(value, value),
         status_label=lambda value: STATUSES.get(value, value), preview_url=preview_url,
+        company_source_types=tuple((kind, label) for kind, label in SOURCES.items() if kind in SOURCE_KINDS),
     )
     portal = TestPortal(store.db)
 
@@ -378,7 +381,7 @@ def create_app(data_dir=None):
             url = form_text(form, "url", 2000)
             kind = form_text(form, "kind", 40)
             slug = form_text(form, "slug", 120)
-            if not name or not canonical_url(url) or kind not in {"greenhouse", "lever", "ashby", "html"}:
+            if not name or not canonical_url(url) or kind not in SOURCE_KINDS:
                 raise ValueError("Enter a company name, a valid careers URL, and a source type.")
             store.save_source(source_id, name, url, kind, slug, "crawl_permission" in form)
             return redirect("/sources", "Company source saved.")
