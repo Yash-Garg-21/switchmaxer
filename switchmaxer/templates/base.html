@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Jobs{% endblock %} · SwitchMaxer</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="layout">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="SwitchMaxer home">
+        <span class="brand-mark" aria-hidden="true">↗</span>
+        <span>SwitchMaxer</span>
+      </a>
+      <nav aria-label="Main">
+        {% for key, href, icon, name in [
+          ('jobs', '/', '▤', 'Jobs'),
+          ('review', '/review', '◇', 'Review queue'),
+          ('applications', '/applications', '✓', 'Applications'),
+          ('sources', '/sources', '◎', 'Sources'),
+          ('profile', '/profile', '◉', 'Profile'),
+        ] %}
+          <a href="{{ href }}" {% if page == key %}aria-current="page"{% endif %}>
+            <span class="nav-icon" aria-hidden="true">{{ icon }}</span>{{ name }}
+          </a>
+        {% endfor %}
+      </nav>
+      <div class="sidebar-foot"><span aria-hidden="true"></span> Local workspace</div>
+    </aside>
+    <main class="main" id="main">
+      {% if message %}
+        <div class="notice {{ 'notice-error' if label == 'error' else 'notice-success' }}"
+             role="{{ 'alert' if label == 'error' else 'status' }}">{{ message }}</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

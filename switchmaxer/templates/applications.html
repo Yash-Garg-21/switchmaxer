@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, answers_list, skill_changes %}
+{% block title %}Applications{% endblock %}
+{% macro action(id, slug, title, kind='secondary') %}
+  <form method="post" action="/applications/{{ id }}/{{ slug }}">{{ csrf() }}<button class="button {{ kind }} small" type="submit">{{ title }}</button></form>
+{% endmacro %}
+{% block content %}
+  <header class="page-head">
+    <div><h1>Applications</h1><p>Track submissions, complete handoffs, and check for receipts.</p></div>
+    <a class="button secondary" href="/exports/applications.html" download>Export HTML <span aria-hidden="true">↓</span></a>
+  </header>
+  {% if applications or external %}
+    <section class="panel section-panel">
+      <header class="section-head"><h2>Application history</h2></header>
+      {% for application in applications %}
+        {% set snapshot = application.snapshot %}
+        <article class="application-row">
+          <div class="row-line">
+            <div class="row-main">
+              <span class="company">{{ snapshot.company or 'Company unknown' }}</span><h3>{{ snapshot.role }}</h3>
+              <p class="micro">Batch {{ application.batch_id }} · {{ application.updated_at[:10] }}{% if snapshot.test_scenario %} · Test portal{% endif %}</p>
+            </div>
+            <span class="tag status-{{ application.status }}">{{ status_label(application.status) }}</span>
+          </div>
+          <p>{{ application.detail }}</p>
+          {% if application.receipt %}<p class="micro">Receipt {{ application.receipt }}</p>{% endif %}
+          <div class="actions entry-actions">
+            {% if application.status == 'manual_handoff' %}
+              <a class="button primary small" href="{{ snapshot.destination }}" target="_blank" rel="noopener noreferrer">Open application <span aria-hidden="true">↗</span></a>
+              {{ action(application.id, 'confirm', 'Mark submitted') }}
+              {{ action(application.id, 'skip', 'Skip job', 'text-button') }}
+            {% elif application.status == 'needs_action' %}
+              {% if snapshot.test_scenario %}{{ action(application.id, 'resume', 'Complete test verification', 'primary') }}
+              {% else %}<a class="button primary small" href="{{ snapshot.destination }}" target="_blank" rel="noopener noreferrer">Open application <span aria-hidden="true">↗</span></a>
+                {{ action(application.id, 'confirm', 'Mark submitted') }}{% endif %}
+              {{ action(application.id, 'skip', 'Skip job', 'text-button') }}
+            {% elif application.status == 'needs_verification' %}
+              {% if snapshot.test_scenario %}{{ action(application.id, 'receipt', 'Check test receipt', 'primary') }}
+              {% else %}{{ action(application.id, 'confirm', 'Confirm submission', 'primary') }}{% endif %}
+              {{ action(application.id, 'unconfirmed', 'Record as unsent', 'text-button') }}
+            {% elif application.status == 'failed' %}{{ action(application.id, 'skip', 'Skip job') }}{% endif %}
+            <a class="button secondary small" href="/applications/{{ application.id }}/pdf" target="_blank" rel="noopener">Approved PDF <span aria-hidden="true">↗</span></a>
+          </div>
+          {% if application.status == 'manual_handoff' %}
+            <p class="micro">If asked, sign in or complete CAPTCHA or email verification in the portal. You can skip this job.</p>
+          {% endif %}
+          <details class="inline-details">
+            <summary>Approved resume and answers</summary>
+            <p>{{ snapshot.original_resume }} <span class="tag">{{ 'Tailored' if snapshot.tailored else 'Original PDF' }}</span></p>
+            {{ skill_changes(snapshot.added_skills, snapshot.removed_skills, snapshot.reordered_skills) }}
+            {{ answers_list(snapshot.answers) }}
+          </details>
+        </article>
+      {% endfor %}
+      {% for job in external %}
+        <article class="application-row row-line">
+          <div class="row-main"><span class="company">{{ job.company or 'Company unknown' }}</span><h3>{{ job.title }}</h3></div>
+          <span class="tag tag-green">Applied elsewhere</span>
+        </article>
+      {% endfor %}
+    </section>
+  {% else %}
+    <section class="panel empty"><span class="empty-icon" aria-hidden="true">✓</span>
+      <h2>No applications yet</h2><p>Approve a batch or mark a job as applied from the jobs table.</p>
+      <a class="button secondary" href="/review">Go to review queue</a>
+    </section>
+  {% endif %}
+{% endblock %}

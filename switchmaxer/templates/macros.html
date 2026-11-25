@@ -1,0 +1,37 @@
+{% macro csrf() -%}<input type="hidden" name="csrf" value="{{ csrf_token }}">{%- endmacro %}
+
+{% macro input(key, label, value='', type='text', placeholder='', required=false) -%}
+  <label class="field">
+    <span>{{ label }}</span>
+    <input name="{{ key }}" type="{{ type }}" value="{{ value or '' }}"
+           {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}{% if required %} required{% endif %}>
+  </label>
+{%- endmacro %}
+
+{% macro source_badges(job) -%}
+  {% for source in job.sources or [job.source] %}
+    <span class="tag">{{ source_label(source) }}</span>
+  {% endfor %}
+{%- endmacro %}
+
+{% macro skill_changes(additions, removals, reordered=[]) -%}
+  {% if additions or removals %}
+    <div class="tags changes">
+      {% for skill in additions %}<span class="tag tag-green">+ {{ skill }}</span>{% endfor %}
+      {% for skill in removals %}<span class="tag tag-muted">− {{ skill }}</span>{% endfor %}
+    </div>
+  {% endif %}
+  {% for change in reordered %}<p class="micro">{{ change }}</p>{% endfor %}
+{%- endmacro %}
+
+{% macro answers_list(answers) -%}
+  {% if answers %}
+    <dl class="answers">
+      {% for key, value in answers.items() %}
+        <div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
+      {% endfor %}
+    </dl>
+  {% else %}
+    <p class="muted">No answers saved. You can add reusable answers in your profile.</p>
+  {% endif %}
+{%- endmacro %}

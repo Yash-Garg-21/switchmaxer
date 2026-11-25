@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ 'Job listings' if kind == 'jobs' else 'Successful applications' }} · SwitchMaxer</title>
+  <style>
+    body{font:15px/1.55 system-ui,sans-serif;margin:2rem auto;padding:0 1rem;max-width:78rem;color:#19322a;background:#f8faf7}
+    h1{font-size:2rem;line-height:1.2;margin-bottom:.4rem}
+    table{width:100%;border-collapse:collapse;background:white}th,td{padding:.8rem;text-align:left;border-bottom:1px solid #e2e9e2;vertical-align:top}
+    th{background:#eef4ec}summary{cursor:pointer;font-weight:650}details p{white-space:pre-wrap;overflow-wrap:anywhere}
+    a{color:#216548}.muted{color:#586962}.wrap{overflow-x:auto}.change{display:block}
+  </style>
+</head>
+<body>
+  {% if kind == 'jobs' %}
+    <h1>Job listings</h1><p class="muted">{{ jobs|length }} listings · Newest first</p>
+    {% if jobs %}
+      <div class="wrap"><table>
+        <thead><tr><th scope="col">Company</th><th scope="col">Role</th><th scope="col">Location</th><th scope="col">Source</th><th scope="col">Date</th><th scope="col">Apply</th><th scope="col">Applied</th></tr></thead>
+        <tbody>{% for job in jobs %}
+          <tr>
+            <td>{{ job.company or 'Unknown' }}</td>
+            <td><details><summary>{{ job.title }}</summary>
+              {% if job.experience_label %}<p>Experience · {{ job.experience_label }}</p>{% endif %}
+              {% if job.skills %}<p>Skills · {{ job.skills|join(', ') }}</p>{% endif %}
+              <p>{{ job.description or 'Job description unavailable.' }}{{ '…' if job.description_truncated }}</p>
+            </details></td>
+            <td>{{ job.location or 'Unspecified' }}</td>
+            <td>{% for source in job.sources %}{{ source_label(source) }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+            <td>{{ job.published_date or job.first_seen[:10] }}<br><span class="muted">{{ 'Published' if job.published_date else 'First seen' }}</span></td>
+            <td>{% if job.test_scenario %}Local test portal{% elif preview_url(job) %}<a href="{{ preview_url(job) }}" rel="noopener noreferrer">Apply</a>{% else %}—{% endif %}</td>
+            <td><input type="checkbox" disabled aria-label="Applied to {{ job.title }}" {% if job.manually_applied or job.application_status == 'submitted' %}checked{% endif %}></td>
+          </tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% else %}<p>No listings to report yet.</p>{% endif %}
+  {% else %}
+    <h1>Successful applications</h1><p class="muted">{{ applications|length }} confirmed {{ 'application' if applications|length == 1 else 'applications' }}</p>
+    {% if applications %}
+      <div class="wrap"><table>
+        <thead><tr><th scope="col">Company</th><th scope="col">Role</th><th scope="col">Confirmed</th><th scope="col">Original resume</th><th scope="col">Skills changes</th><th scope="col">Receipt</th></tr></thead>
+        <tbody>{% for application in applications %}
+          {% set snapshot = application.snapshot %}
+          <tr><td>{{ snapshot.company or 'Unknown' }}{% if snapshot.test_scenario %}<br><span class="muted">Test submission</span>{% endif %}</td>
+            <td>{{ snapshot.role }}</td><td>{{ application.confirmed_at[:10] }}</td><td>{{ snapshot.original_resume }}</td>
+            <td>
+              {% for skill in snapshot.added_skills %}<span class="change">Added {{ skill }}</span>{% endfor %}
+              {% for skill in snapshot.removed_skills %}<span class="change">Removed {{ skill }}</span>{% endfor %}
+              {% for change in snapshot.reordered_skills %}<span class="change">{{ change }}</span>{% endfor %}
+              {% if not (snapshot.added_skills or snapshot.removed_skills or snapshot.reordered_skills) %}None{% endif %}
+            </td>
+            <td>{{ application.receipt or 'User confirmed' }}</td>
+          </tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% else %}<p>No confirmed applications to report yet.</p>{% endif %}
+  {% endif %}
+</body>
+</html>

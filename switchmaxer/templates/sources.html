@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, input %}
+{% block title %}Sources{% endblock %}
+{% macro company_fields(source={}) %}
+  <div class="form-grid">
+    {{ input('name', 'Company name', source.name, placeholder='Acme', required=true) }}
+    {{ input('url', 'Careers or job board URL', source.url, 'url', 'https://job-boards.greenhouse.io/acme', true) }}
+    <label class="field"><span>Source type</span>
+      <select name="kind">
+        {% for kind, label in [('greenhouse','Greenhouse'),('lever','Lever'),('ashby','Ashby'),('html','Company site')] %}
+          <option value="{{ kind }}" {% if source.kind == kind %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {{ input('slug', 'Feed slug, if different from the URL', source.slug, placeholder='acme') }}
+    <label class="check-label wide"><input name="crawl_permission" type="checkbox" {% if source.crawl_permission %}checked{% endif %}>
+      This company site permits crawling <span class="micro">(Company site sources only)</span>
+    </label>
+  </div>
+{% endmacro %}
+{% block content %}
+  <header class="page-head">
+    <div><h1>Sources</h1><p>Refresh employer feeds and bring in listings from job-board alerts.</p></div>
+    <form method="post" action="/sources/refresh">{{ csrf() }}<input type="hidden" name="return_to" value="sources">
+      <button class="button primary" type="submit">Refresh sources <span aria-hidden="true">↻</span></button>
+    </form>
+  </header>
+  <section class="panel section-panel">
+    <header class="section-head"><h2>Company registry</h2><p>Supported feeds are Greenhouse, Lever, and Ashby. Company-site discovery uses permitted careers pages.</p></header>
+    {% for source in sources %}
+      <details class="registry-row">
+        <summary><strong>{{ source.name }}</strong><span class="tag">{{ source_label(source.kind) }}</span>
+          <span class="tag {% if source.status == 'success' %}tag-green{% elif source.status in ['failed', 'manual'] %}tag-amber{% endif %}">{{ source.status|capitalize }}</span>
+          {% if source.checked_at %}<span class="micro">Checked {{ source.checked_at[:10] }}</span>{% endif %}
+        </summary>
+        {% if source.error %}<p class="micro">{{ source.error }}</p>{% endif %}
+        <form method="post" action="/sources/save" class="details-form">{{ csrf() }}<input type="hidden" name="id" value="{{ source.id }}">
+          {{ company_fields(source) }}<button class="button secondary" type="submit">Save changes</button>
+        </form>
+        <form method="post" action="/sources/{{ source.id }}/delete" class="delete-form">
+          {{ csrf() }}<button class="button text-button" type="submit">Remove source</button>
+        </form>
+      </details>
+    {% endfor %}
+    <details class="add-source" {% if not sources %}open{% endif %}>
+      <summary>Add company source</summary>
+      <form method="post" action="/sources/save" class="details-form">{{ csrf() }}
+        {{ company_fields() }}<button class="button primary" type="submit">Add source</button>
+      </form>
+    </details>
+  </section>
+  <section class="panel section-panel">
+    <header class="section-head"><h2>Import job-board listings</h2><p>Upload an alert email, paste its contents, or enter a posting link and job details.</p></header>
+    <form action="/sources/import" method="post" enctype="multipart/form-data">
+      {{ csrf() }}
+      <div class="form-grid">
+        <label class="field"><span>Job board</span><select name="source">
+          <option value="linkedin">LinkedIn</option><option value="naukri">Naukri</option>
+          <option value="instahyre">Instahyre</option><option value="manual">Other / manual</option>
+        </select></label>
+        <label class="field"><span>Alert file</span><input type="file" name="alert" accept=".eml,.txt,.html,.htm,text/plain,message/rfc822"></label>
+        <label class="field wide"><span>Alert text or job links</span><textarea name="content" rows="3" placeholder="Paste an alert, message, or posting link"></textarea></label>
+        <div class="wide">{{ input('url', 'Single posting link', type='url') }}</div>
+      </div>
+      <details class="inline-details extra-fields"><summary>Optional job details</summary>
+        <div class="form-grid details-form">
+          {{ input('company', 'Company') }}{{ input('title', 'Role') }}{{ input('location', 'Location') }}
+          {{ input('published_date', 'Published date', type='date') }}
+          {{ input('requisition_id', 'Employer requisition ID') }}{{ input('apply_url', 'Verified employer apply URL', type='url') }}
+          <label class="field wide"><span>Job description</span><textarea name="description" rows="4"></textarea></label>
+        </div>
+      </details>
+      <button class="button primary" type="submit">Import listings</button>
+    </form>
+  </section>
+  <section class="panel section-panel compact-panel">
+    <div><h2>Local test portal</h2><p>Try a confirmed application, a verification pause, and a timed-out response.</p></div>
+    <form method="post" action="/sources/test-jobs">{{ csrf() }}<button class="button secondary" type="submit">Load test jobs</button></form>
+  </section>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, input %}
+{% block title %}Profile{% endblock %}
+{% block content %}
+  <header class="page-head"><div><h1>Profile</h1><p>Your resumes, search preferences, and reusable application answers.</p></div></header>
+  <section class="panel section-panel">
+    <header class="section-head"><h2>Resumes</h2><p>Upload one or more named PDFs. The default breaks ties and suggests your application email.</p></header>
+    {% if resumes %}
+      <div class="resume-list">
+        {% for resume in resumes %}
+          <article class="resume-row">
+            <div class="row-line">
+              <div class="file-icon" aria-hidden="true">PDF</div>
+              <div class="row-main"><a class="table-link file-name" href="/profile/resumes/{{ resume.id }}/pdf" target="_blank">{{ resume.name }}</a>
+                {% if resume.is_default %}<span class="tag tag-green">Default</span>{% endif %}
+                {% if not resume.text %}<span class="micro">No extractable text</span>{% endif %}
+              </div>
+              {% if not resume.is_default %}
+                <form method="post" action="/profile/resumes/{{ resume.id }}/default">
+                  {{ csrf() }}<button class="button secondary small">Make default</button>
+                </form>
+              {% endif %}
+            </div>
+            {% if profile.tailor or resume.source_dir %}
+              <details class="inline-details">
+                <summary>{{ 'Edit LaTeX source' if resume.source_dir else 'Attach LaTeX source' }}</summary>
+                <form method="post" action="/profile/resumes/{{ resume.id }}/source" class="form-grid details-form">
+                  {{ csrf() }}
+                  <div class="wide">{{ input('source_dir', 'Local project folder', resume.source_dir, placeholder='/Users/you/Documents/Resume') }}</div>
+                  {{ input('entry_file', 'Entry file', resume.entry_file or 'resume.tex') }}
+                  {{ input('skills_file', 'Skills section file', resume.skills_file or 'content/skills.tex') }}
+                  <div class="wide"><button class="button secondary" type="submit">Save source</button></div>
+                </form>
+              </details>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <form method="post" action="/profile/resumes" enctype="multipart/form-data" class="upload-form">
+      {{ csrf() }}
+      <label class="field"><span>Resume PDFs</span><input type="file" name="resumes" accept=".pdf,application/pdf" multiple required></label>
+      <button class="button primary" type="submit">Upload resumes</button>
+    </form>
+  </section>
+
+  {% if resumes %}
+    <form method="post" action="/profile" class="form-sections">
+      {{ csrf() }}
+      <section class="panel section-panel">
+        <header class="section-head"><h2>Application details</h2><p>A dedicated address can keep recruiter replies together. Enter any verification codes directly in the portal.</p></header>
+        <div class="form-grid">
+          {{ input('name', 'Full name', profile.name) }}{{ input('email', 'Application email', profile.email, 'email') }}
+          {{ input('phone', 'Phone', profile.phone, 'tel') }}{{ input('portfolio', 'Portfolio or public profile', profile.portfolio, 'url') }}
+          {{ input('notice_days', 'Notice period in days', profile.notice_days, 'number', '60') }}
+          {{ input('start_date', 'Earliest start date, if known', profile.start_date, 'date') }}
+          {{ input('fixed_ctc', 'Current fixed CTC', profile.fixed_ctc) }}{{ input('variable_ctc', 'Current variable CTC', profile.variable_ctc) }}
+          {{ input('expected_ctc', 'Expected CTC or range', profile.expected_ctc) }}{{ input('ctc_units', 'Currency and units', profile.ctc_units) }}
+          {{ input('work_authorization', 'Work authorization', profile.work_authorization) }}
+          {{ input('sponsorship', 'Sponsorship', profile.sponsorship) }}{{ input('relocation', 'Relocation', profile.relocation) }}
+        </div>
+      </section>
+      <section class="panel section-panel">
+        <header class="section-head"><h2>Job preferences</h2><p>Separate multiple titles, levels, locations, work modes, or companies with commas.</p></header>
+        <div class="form-grid">
+          {{ input('current_role', 'Current role', profile.current_role, placeholder='Software Engineer II') }}
+          {{ input('experience_years', 'Years of experience', profile.experience_years, placeholder='2.5') }}
+          {{ input('target_titles', 'Target titles', profile.target_titles, placeholder='Backend engineer, software engineer') }}
+          {{ input('target_levels', 'Target levels', profile.target_levels, placeholder='Mid-level, II') }}
+          {{ input('locations', 'Preferred locations', profile.locations, placeholder='Bengaluru, Pune') }}
+          {{ input('work_modes', 'Work modes', profile.work_modes, placeholder='Remote, hybrid') }}
+          {{ input('include_companies', 'Include companies', profile.include_companies) }}
+          {{ input('exclude_companies', 'Exclude companies', profile.exclude_companies) }}
+        </div>
+      </section>
+      <section class="panel section-panel">
+        <header class="section-head"><h2>Resume tailoring</h2><p>Only skills you confirm can be added to a PDF.</p></header>
+        <label class="check-label"><input type="checkbox" name="tailor" value="1" {% if profile.tailor %}checked{% endif %}> Tailor the LaTeX skills section for shortlisted jobs</label>
+        <label class="field skills-field"><span>Confirmed skills</span><textarea name="verified_skills" rows="3"
+          placeholder="Python, Kubernetes&#10;PostgreSQL | Postgres">{{ profile.verified_skills }}</textarea>
+          <small>Use commas or new lines. To group aliases, use a line like PostgreSQL | Postgres.</small></label>
+        {% if suggestions %}
+          <fieldset class="suggestions">
+            <legend>Confirm skills found in your resumes</legend>
+            <div class="tags">
+              {% for skill in suggestions %}<label class="check-tag"><input type="checkbox" name="confirmed_skills" value="{{ skill }}">{{ skill }}</label>{% endfor %}
+            </div>
+          </fieldset>
+        {% endif %}
+      </section>
+      <div class="actions"><button class="button primary" type="submit">Save profile</button></div>
+    </form>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, skill_changes, answers_list %}
+{% block title %}Review queue{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <div><h1>Review queue</h1><p>Check the destination, resume, and answers before approving a batch.</p></div>
+    {% if jobs %}<form method="post" action="/review/prepare">{{ csrf() }}
+      <button class="button secondary" type="submit">Prepare resumes <span aria-hidden="true">↻</span></button>
+    </form>{% endif %}
+  </header>
+  {% if jobs %}
+    <form method="post" action="/review/approve" class="form-sections">
+      {{ csrf() }}
+      <section class="panel section-panel">
+        <header class="section-head"><h2>Shortlisted jobs <span class="count">{{ jobs|length }}</span></h2></header>
+        {% for job in jobs %}
+          <article class="review-row">
+            <label class="select-job">
+              <input type="checkbox" aria-label="Include {{ job.title }} in batch" name="selected" value="{{ job.id }}"
+                {% if not job.ready or not preview_url(job) %}disabled{% endif %}>
+            </label>
+            <div class="row-main">
+              <span class="company">{{ job.company or 'Company unknown' }}</span>
+              <h3>{{ job.title }}</h3>
+              {% if preview_url(job) %}
+                <a class="table-link destination" href="{{ preview_url(job) }}" target="_blank" rel="noopener noreferrer">
+                  {% if job.test_scenario %}Local test portal{% else %}{{ preview_url(job) }}{% endif %} <span aria-hidden="true">↗</span>
+                </a>
+              {% else %}<span class="tag tag-amber">Application link needed</span>{% endif %}
+              {% if job.ready %}
+                {% set proposal = job.proposal %}
+                <input type="hidden" name="approval_{{ job.id }}" value="{{ job.approval_token }}">
+                <div class="resume-preview">
+                  <a class="table-link" href="/review/{{ job.id }}/pdf" target="_blank" rel="noopener">Preview {{ proposal.resume_name }} <span aria-hidden="true">↗</span></a>
+                  <span class="tag {{ 'tag-green' if proposal.tailored else '' }}">{{ 'Tailored' if proposal.tailored else 'Original PDF' }}</span>
+                </div>
+                {{ skill_changes(proposal.additions, proposal.removals, proposal.reordered) }}
+                {% if proposal.gaps %}<p class="micro">JD skill gaps · {{ proposal.gaps|join(', ') }}</p>{% endif %}
+                {% if proposal.warning %}<p class="inline-alert">{{ proposal.warning }}</p>{% endif %}
+                {% if job.email_warning %}<p class="inline-alert">{{ job.email_warning }}</p>{% endif %}
+              {% else %}
+                <span class="tag tag-amber">Resume preparation needed</span>
+              {% endif %}
+            </div>
+          </article>
+        {% endfor %}
+      </section>
+      <section class="panel section-panel">
+        <header class="section-head"><h2>Saved answers</h2><p>These answers are included in the approval. The live form may ask for more.</p></header>
+        {{ answers_list(answers) }}
+      </section>
+      <div class="actions">
+        <button class="button primary" type="submit" {% if not jobs|selectattr('ready')|list %}disabled{% endif %}>Approve selected jobs <span aria-hidden="true">→</span></button>
+      </div>
+    </form>
+  {% else %}
+    <section class="panel empty"><span class="empty-icon" aria-hidden="true">◇</span>
+      <h2>Nothing to review yet</h2><p>Shortlist jobs to prepare their resumes and build a batch.</p>
+      <a class="button secondary" href="/">Browse jobs</a>
+    </section>
+  {% endif %}
+{% endblock %}

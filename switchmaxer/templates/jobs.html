@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, source_badges %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <div><h1>Jobs</h1><p>Find openings and shortlist the roles you want to apply for.</p></div>
+    <div class="actions">
+      <a class="button secondary" href="/exports/jobs.html" download>Export HTML <span aria-hidden="true">↓</span></a>
+      <form method="post" action="/sources/refresh">
+        {{ csrf() }}<button class="button primary" type="submit">Refresh jobs <span aria-hidden="true">↻</span></button>
+      </form>
+    </div>
+  </header>
+
+  {% if not has_resumes %}
+    <section class="setup-strip" aria-labelledby="setup-title">
+      <span aria-hidden="true" class="setup-icon">↗</span>
+      <div><h2 id="setup-title">Start with your resume</h2><p>Upload one or more PDFs, then set your search preferences.</p></div>
+      <a class="button primary" href="/profile">Set up profile <span aria-hidden="true">→</span></a>
+    </section>
+  {% endif %}
+
+  <section class="metrics" aria-label="Workspace activity">
+    <div class="metric"><span>Discovered</span><strong>{{ total }}</strong></div>
+    <div class="metric"><span>Shortlisted</span><strong>{{ shortlisted }}</strong></div>
+    <div class="metric"><span>Applied</span><strong>{{ applied }}</strong></div>
+  </section>
+
+  <section class="panel results">
+    <div class="panel-top">
+      <div><h2>Job listings</h2><p>{{ result_count }} {{ 'listing' if result_count == 1 else 'listings' }} · Newest first</p></div>
+      <form class="job-search" method="get" action="/">
+        <label class="visually-hidden" for="q">Search jobs</label>
+        <input id="q" name="q" type="search" value="{{ q }}" placeholder="Search jobs" maxlength="120">
+        <label class="visually-hidden" for="view">Show jobs</label>
+        <select id="view" name="view">
+          <option value="matches" {% if view == 'matches' %}selected{% endif %}>Matches</option>
+          <option value="all" {% if view == 'all' %}selected{% endif %}>All jobs</option>
+          <option value="shortlisted" {% if view == 'shortlisted' %}selected{% endif %}>Shortlisted</option>
+        </select>
+        <button type="submit" class="button secondary">Filter</button>
+      </form>
+    </div>
+    {% if jobs %}
+    <div class="table-wrap">
+      <table class="jobs-table">
+        <thead><tr><th scope="col">Company / role</th><th scope="col">Location / source</th><th scope="col">Date</th>
+          <th scope="col">Apply</th><th scope="col">Applied</th><th scope="col">Shortlist</th></tr></thead>
+        <tbody>
+          {% for job in jobs %}
+            <tr>
+              <td class="job-name">
+                <span class="company">{{ job.company or 'Company unknown' }}</span>
+                <details>
+                  <summary>{{ job.title }}</summary>
+                  <div class="job-detail">
+                    {% if job.experience_label %}<p><strong>Experience</strong> {{ job.experience_label }}</p>{% endif %}
+                    {% if job.skills %}<div class="tags">{% for skill in job.skills %}<span class="tag">{{ skill }}</span>{% endfor %}</div>{% endif %}
+                    <p class="preserve">{{ job.description or 'Job description unavailable. Open the posting for details.' }}{{ '…' if job.description_truncated }}</p>
+                  </div>
+                </details>
+              </td>
+              <td><div>{{ job.location or 'Unspecified' }}</div><div class="tags source-tags">{{ source_badges(job) }}</div></td>
+              <td class="date-cell">{{ job.published_date or job.first_seen[:10] }}<span class="micro">{{ 'Published' if job.published_date else 'First seen' }}</span></td>
+              <td>{% if preview_url(job) %}<a class="table-link" href="{{ preview_url(job) }}" target="_blank" rel="noopener noreferrer">Open <span aria-hidden="true">↗</span></a>{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td>
+                {% if job.application_status and job.application_status not in ['failed', 'skipped'] %}
+                  <input type="checkbox" aria-label="{{ status_label(job.application_status) }} for {{ job.title }}"
+                    {% if job.application_status == 'submitted' %}checked{% endif %} disabled>
+                  {% if job.application_status != 'submitted' %}<a class="micro" href="/applications">{{ status_label(job.application_status) }}</a>{% endif %}
+                {% else %}
+                  <form method="post" action="/jobs/{{ job.id }}/flag">
+                    {{ csrf() }}<input type="hidden" name="flag" value="manually_applied">
+                    <input type="hidden" name="view" value="{{ view }}"><input type="hidden" name="q" value="{{ q }}">
+                    <input type="hidden" name="p" value="{{ p }}">
+                    <input type="checkbox" name="value" value="1" data-autosave
+                      aria-label="Mark {{ job.title }} applied elsewhere" {% if job.manually_applied %}checked{% endif %}>
+                    <noscript><button type="submit">Save</button></noscript>
+                  </form>
+                {% endif %}
+              </td>
+              <td>
+                {% if not job.application_id %}
+                  <form method="post" action="/jobs/{{ job.id }}/flag">
+                    {{ csrf() }}<input type="hidden" name="flag" value="shortlisted">
+                    <input type="hidden" name="view" value="{{ view }}"><input type="hidden" name="q" value="{{ q }}">
+                    <input type="hidden" name="p" value="{{ p }}">
+                    <button class="button icon-button {{ 'chosen' if job.shortlisted else '' }}" type="submit" name="value"
+                      value="{{ 0 if job.shortlisted else 1 }}"
+                      aria-label="{{ 'Remove from' if job.shortlisted else 'Add to' }} shortlist: {{ job.title }}"
+                      title="{{ 'Remove from' if job.shortlisted else 'Add to' }} shortlist">{{ '✓' if job.shortlisted else '+' }}</button>
+                  </form>
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if last_page > 1 %}
+      <nav class="pagination" aria-label="Job listing pages">
+        <span class="micro">Page {{ p }} of {{ last_page }}</span>
+        {% if p > 1 %}<a class="button secondary small" href="{{ page_href(p - 1) }}">Previous</a>{% endif %}
+        {% if p < last_page %}<a class="button secondary small" href="{{ page_href(p + 1) }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+    {% else %}
+      <div class="empty">
+        <span class="empty-icon" aria-hidden="true">▤</span>
+        {% if total %}
+          <h3>No listings match these filters</h3><p>Try a different search or view all discovered jobs.</p>
+          <a class="button secondary" href="/?view=all">View all jobs</a>
+        {% else %}
+          <h3>No job listings yet</h3><p>Add a company careers page or import a job-board alert.</p>
+          <a class="button secondary" href="/sources">{{ 'Manage sources' if sources_count else 'Add a source' }}</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}
