@@ -127,17 +127,79 @@ class DashboardTest(unittest.TestCase):
                 "lever", "role-1", "Acme", "Software Engineer II", "Bengaluru", "https://jobs.lever.co/acme/role-1",
                 "https://jobs.lever.co/acme/role-1/apply", "2–4 years of experience. Python.",
             )
-            with patch("switchmaxer.main.refresh_sources", side_effect=lambda sources: [
-                SourceResult(sources[0], [record], "success"),
-            ]):
+            with patch("switchmaxer.main.starter_sources") as starters, patch(
+                "switchmaxer.main.refresh_sources",
+                side_effect=lambda sources: [SourceResult(sources[0], [record], "success")],
+            ) as refresh:
                 self.post(client, "/sources/refresh")
                 self.post(client, "/sources/refresh")
+            starters.assert_not_called()
+            self.assertEqual([[source["name"] for source in call.args[0]] for call in refresh.call_args_list],
+                             [["Acme"], ["Acme"]])
+            source, = app.state.store.sources()
+            self.assertEqual((source["name"], source["status"]), ("Acme", "success"))
             job, = app.state.store.jobs()
             self.assertEqual(job["apply_url"], record.apply_url)
             self.assertTrue(job["manually_applied"])
             self.assertEqual(job["sources"], ["lever", "linkedin"])
             self.assertIn("Applied elsewhere", client.get("/applications").text)
             self.assertIn("checked", client.get("/exports/jobs.html").text)
+
+    def test_first_refresh_bootstraps_once_and_honors_removal(self):
+        app = create_app(self.data)
+        store = app.state.store
+        starter_rows = [{"name": "Starter", "kind": "lever", "url": "https://jobs.lever.co/starter",
+                         "slug": "starter", "crawl_permission": False}]
+        with TestClient(app) as client, patch(
+            "switchmaxer.main.starter_sources", return_value=starter_rows,
+        ) as starters, patch(
+            "switchmaxer.main.refresh_sources", side_effect=lambda sources: [
+                SourceResult(source, [], "success") for source in sources
+            ],
+        ) as refresh:
+            store.save_profile({"locations": "Bengaluru"})
+            self.assertTrue(client.get("/").context["can_add_starter_sources"])
+            self.assertTrue(client.get("/sources").context["can_add_starter_sources"])
+            self.assertEqual(store.sources(), [])
+            starters.assert_not_called()
+
+            response = self.post(client, "/sources/refresh")
+            self.assertIn("Refreshed 1 of 1 sources", response.text)
+            source, = store.sources()
+            self.assertEqual((source["name"], source["status"]), ("Starter", "success"))
+            self.assertFalse(response.context["can_add_starter_sources"])
+            self.post(client, "/sources/refresh", return_to="sources")
+            self.assertEqual([item["id"] for item in store.sources()], [source["id"]])
+            starters.assert_called_once_with(store.profile())
+            self.assertEqual(refresh.call_count, 2)
+
+            self.post(client, f"/sources/{source['id']}/delete")
+            self.assertFalse(client.get("/sources").context["can_add_starter_sources"])
+            response = self.post(client, "/sources/refresh")
+            self.assertIn("Add a company source", response.text)
+            self.assertEqual(store.sources(), [])
+            self.assertEqual(refresh.call_count, 2)
+            self.assertEqual(starters.call_count, 1)
+
+    def test_deleting_cli_configured_source_before_first_refresh_prevents_starters(self):
+        from switchmaxer.setup import configure
+
+        configure(self.data, {"sources": [{"name": "Configured", "kind": "lever",
+                                          "url": "https://jobs.lever.co/configured"}]})
+        app = create_app(self.data)
+        with TestClient(app) as client:
+            source, = app.state.store.sources()
+            self.post(client, f"/sources/{source['id']}/delete")
+
+        with TestClient(create_app(self.data)) as client, patch(
+            "switchmaxer.main.starter_sources",
+        ) as starters, patch("switchmaxer.main.refresh_sources") as refresh:
+            response = self.post(client, "/sources/refresh", return_to="sources")
+            self.assertIn("Add a company source", response.text)
+            self.assertEqual(response.context["sources"], [])
+            self.assertFalse(response.context["can_add_starter_sources"])
+            starters.assert_not_called()
+            refresh.assert_not_called()
 
     def test_sources_saves_smartrecruiters_board_with_country_filter(self):
         app = create_app(self.data)

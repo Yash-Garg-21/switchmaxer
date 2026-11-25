@@ -6,7 +6,7 @@
     <div><h1>Jobs</h1><p>Find openings and shortlist the roles you want to apply for.</p></div>
     <div class="actions">
       <a class="button secondary" href="/exports/jobs.html" download>Export HTML <span aria-hidden="true">↓</span></a>
-      <form method="post" action="/sources/refresh">
+      <form method="post" action="/sources/refresh" data-refresh-sources>
         {{ csrf() }}<button class="button primary" type="submit">Refresh jobs <span aria-hidden="true">↻</span></button>
       </form>
     </div>
@@ -110,9 +110,16 @@
         {% if total %}
           <h3>No listings match these filters</h3><p>Try a different search or view all discovered jobs.</p>
           <a class="button secondary" href="/?view=all">View all jobs</a>
+        {% elif can_add_starter_sources %}
+          <h3>Ready to find jobs</h3><p>Refresh jobs to set up starter employer sources and find openings.</p>
         {% else %}
-          <h3>No job listings yet</h3><p>Add a company careers page or import a job-board alert.</p>
-          <a class="button secondary" href="/sources">{{ 'Manage sources' if sources_count else 'Add a source' }}</a>
+          <h3>No job listings yet</h3>
+          {% if sources_count %}
+            <p>Refresh jobs to fetch listings from your configured employers.</p>
+          {% else %}
+            <p>Your source registry is empty. You can manage it in Sources.</p>
+            <a class="button secondary" href="/sources">Manage sources</a>
+          {% endif %}
         {% endif %}
       </div>
     {% endif %}

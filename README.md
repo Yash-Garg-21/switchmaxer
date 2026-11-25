@@ -56,16 +56,19 @@ Open [SwitchMaxer at 127.0.0.1:8765](http://127.0.0.1:8765). The server listens 
 ## Use the dashboard
 
 1. **Profile.** Upload one or more PDFs, choose a default, and save your job preferences and reusable answers. The default resume can suggest your application email. Notice defaults to 60 days.
-2. **Sources.** Add public Greenhouse, Lever, Ashby, or SmartRecruiters job boards by hosted board URL or slug. SwitchMaxer can also crawl career pages where permitted and read structured job listings. Import LinkedIn, Naukri, and Instahyre jobs through downloaded alert emails, pasted alerts, or posting links. An employer apply URL or requisition ID helps merge duplicate listings.
-3. **Jobs.** Refresh the sources and shortlist roles. Open a role to see its description, experience requirements, and recognized skills. Use the applied checkbox to track applications you sent elsewhere.
-4. **Review queue.** Prepare the most relevant resume for each job. Review the PDF, any skills changes, and saved form answers before approving selected jobs as a batch.
-5. **Applications.** Open the live employer form with your approved PDF and answers ready. Complete the form, sign in or enter any verification codes directly in the portal, and mark it submitted after confirmation. Automated submission runs against the local test portal.
+2. **Jobs.** Choose **Refresh jobs**. On the first refresh in an empty workspace, SwitchMaxer adds starter employer sources automatically. Open a role to see its description, experience requirements, and recognized skills. Shortlist roles to review, or use the applied checkbox to track applications you sent elsewhere.
+3. **Review queue.** Prepare the most relevant resume for each job. Review the PDF, any skills changes, and saved form answers before approving selected jobs as a batch.
+4. **Applications.** Open the live employer form with your approved PDF and answers ready. Complete the form, sign in or enter any verification codes directly in the portal, and mark it submitted after confirmation. Automated submission runs against the local test portal.
 
 Download `jobs.html` and `applications.html` from the dashboard. `jobs.html` lists discoveries and their applied status. `applications.html` records confirmed submissions, the original resume filename, and any skill changes. It labels local test submissions. Both standalone files are also saved under `exports` in the data directory.
 
-### SmartRecruiters boards
+### Optional source management
 
-Select **SmartRecruiters** in **Sources** and enter a hosted board URL such as `https://careers.smartrecruiters.com/example?country=in&q=backend`. The `country` filter and `q` search term are both optional. SwitchMaxer uses the public GET endpoints to list postings and fetches full job descriptions for a limited number per refresh. [SmartRecruiters Posting API](https://developers.smartrecruiters.com/docs/endpoints)
+The built-in catalog includes public Greenhouse, Lever, Ashby, and SmartRecruiters feeds. Set your location preferences before the first refresh if you want the starter registry tailored to them. An India-only search uses India-scoped SmartRecruiters feeds and adds SAP Careers for Bengaluru.
+
+Use **Sources** to view refresh results, customize the registry, or import LinkedIn, Naukri, and Instahyre listings from alerts or posting links. A known employer apply URL or requisition ID helps merge duplicate listings. The optional AI setup skill can look up verified employer sources for specific target companies.
+
+For a custom SmartRecruiters feed, enter a hosted board URL such as `https://careers.smartrecruiters.com/example?country=in&q=backend`. Both query filters are optional. Full descriptions are fetched for a limited number of postings per refresh. [SmartRecruiters Posting API](https://developers.smartrecruiters.com/docs/endpoints)
 
 ### Optional LaTeX tailoring
 

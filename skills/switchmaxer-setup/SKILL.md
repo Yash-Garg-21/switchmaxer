@@ -16,7 +16,7 @@ Use `python -m switchmaxer.setup inspect` from the checkout with the virtual env
 - Preserve existing values unless the user requests a change. For a new profile, collect the PDFs the user selects and their preferred default if there are multiple. The default resume can suggest their application email. Keep the 60-day notice default unless the user supplies a different period or start date.
 - Collect requested target titles, experience, locations, and work modes. Location and work mode filters apply together. Clarify an either-or preference if needed. Compensation and other reusable answers can be entered directly in the local Profile screen.
 - Enable tailoring if requested. Use each resume's matching local LaTeX folder, entry file, and skills file, plus skills the user confirms. See the README for Tectonic setup and Russell-style paths.
-- For requested employer sources, collect the careers URL or hosted board details. Prefer documented public feeds. Preserve optional `country` and `q` filters in SmartRecruiters board URLs. Configure an HTML crawler only for a permitted site. Use the dashboard's alert and link import for LinkedIn, Naukri, and Instahyre.
+- Let the dashboard add its starter employer sources on the first refresh. When the user names target employers, look up their official careers pages and verify supported job-board URLs or public feeds on the user's behalf. Save verified sources through the setup CLI. Preserve optional `country` and `q` filters in SmartRecruiters URLs. Configure an HTML crawler only for a permitted site. Use the dashboard's alert and link import for LinkedIn, Naukri, and Instahyre.
 
 ## Configure and verify
 

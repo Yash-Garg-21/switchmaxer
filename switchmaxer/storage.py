@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS sources (
     error TEXT NOT NULL DEFAULT '',
     checked_at TEXT
 );
+CREATE TABLE IF NOT EXISTS metadata (
+    key TEXT PRIMARY KEY
+);
+CREATE TRIGGER IF NOT EXISTS remember_source_registry AFTER INSERT ON sources
+BEGIN
+    INSERT OR IGNORE INTO metadata(key) VALUES ('source_registry_initialized');
+END;
+INSERT OR IGNORE INTO metadata(key) SELECT 'source_registry_initialized' FROM sources LIMIT 1;
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY,
     data TEXT NOT NULL,
@@ -133,6 +141,7 @@ CREATE TABLE IF NOT EXISTS applications (
 
 SOURCE_KINDS = ATS | {"html"}
 EMPLOYER_SOURCES = SOURCE_KINDS | {"company"}
+_INSERT_SOURCE = "INSERT INTO sources(name,url,kind,slug,crawl_permission) VALUES (?,?,?,?,?)"
 
 
 def utc_now():
@@ -316,9 +325,32 @@ class Store:
             ).rowcount:
                 raise ValueError("Resume not found.")
 
-    def sources(self):
-        with self.db() as connection:
-            return [dict(row) for row in connection.execute("SELECT * FROM sources ORDER BY name, id")]
+    def sources(self, connection=None):
+        if connection is None:
+            with self.db() as connection:
+                return self.sources(connection)
+        return [dict(row) for row in connection.execute("SELECT * FROM sources ORDER BY name, id")]
+
+    def can_add_starter_sources(self, connection=None):
+        if connection is None:
+            with self.db() as connection:
+                return self.can_add_starter_sources(connection)
+        row = connection.execute(
+            "SELECT NOT EXISTS (SELECT 1 FROM metadata WHERE key='source_registry_initialized') "
+            "AND NOT EXISTS (SELECT 1 FROM sources)"
+        ).fetchone()
+        return bool(row[0])
+
+    def sources_for_refresh(self, starter_sources):
+        with self.db(write=True) as connection:
+            if self.can_add_starter_sources(connection):
+                starters = starter_sources(self.profile(connection))
+                connection.execute("INSERT INTO metadata(key) VALUES ('source_registry_initialized')")
+                connection.executemany(_INSERT_SOURCE, (
+                    (source["name"], source["url"], source["kind"], source["slug"], int(source["crawl_permission"]))
+                    for source in starters
+                ))
+            return self.sources(connection)
 
     def save_source(self, source_id, name, url, kind, slug, crawl_permission):
         values = (name, url, kind, slug, int(crawl_permission))
@@ -330,9 +362,7 @@ class Store:
                 ).rowcount:
                     raise ValueError("Company source not found.")
             else:
-                connection.execute(
-                    "INSERT INTO sources(name,url,kind,slug,crawl_permission) VALUES (?,?,?,?,?)", values
-                )
+                connection.execute(_INSERT_SOURCE, values)
 
     def delete_source(self, source_id):
         with self.db(write=True) as connection:

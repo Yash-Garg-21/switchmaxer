@@ -22,6 +22,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .applications import ApprovedApplication, TEST_JOBS, TestPortal, create_test_portal_router, run_application_batch
 from .discovery import canonical_url, experience_range, matches_profile, parse_import, refresh_sources
 from .resumes import ResumeError, prepare_resume, read_pdf, suggest_skills, validate_source
+from .starter_sources import starter_sources
 from .storage import (
     PROFILE_DEFAULTS, SOURCE_KINDS, Store, default_data_dir, job_version, json_text, resume_configuration,
     validate_profile,
@@ -253,7 +254,8 @@ def create_app(data_dir=None):
             result_count=len(matching), p=p, last_page=last_page,
             total=len(all_jobs), shortlisted=sum(job["shortlisted"] for job in all_jobs),
             applied=sum(job["manually_applied"] or job["application_status"] == "submitted" for job in all_jobs),
-            sources_count=len(store.sources()), page_href=lambda page: "/?" + urlencode({"q": q[:120], "view": view, "p": page}),
+            sources_count=len(store.sources()), can_add_starter_sources=store.can_add_starter_sources(),
+            page_href=lambda page: "/?" + urlencode({"q": q[:120], "view": view, "p": page}),
         )
 
     @app.post("/jobs/{job_id}/flag")
@@ -369,7 +371,7 @@ def create_app(data_dir=None):
 
     @app.get("/sources")
     def sources_page(request: Request):
-        return render(request, "sources", sources=store.sources())
+        return render(request, "sources", sources=store.sources(), can_add_starter_sources=store.can_add_starter_sources())
 
     @app.post("/sources/save")
     async def source_save(request: Request):
@@ -403,7 +405,7 @@ def create_app(data_dir=None):
         if not refresh_lock.acquire(blocking=False):
             return redirect(path, "A refresh is already running.")
         try:
-            sources = store.sources()
+            sources = await asyncio.to_thread(store.sources_for_refresh, starter_sources)
             if not sources:
                 return redirect("/sources", "Add a company source to refresh its listings.")
             results = await asyncio.to_thread(refresh_sources, sources)
